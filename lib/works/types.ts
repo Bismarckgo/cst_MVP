@@ -10,6 +10,12 @@ export type WorkType = 'song' | 'recording'
 
 export type WorkStatus = 'draft' | 'ready'
 
+// The role a person plays on a work. The role — not merely "participating" —
+// determines what kind of contributor they are and which splits apply to them.
+// Authorship roles (compositor, letrista) earn a composition share; the
+// producer and performing artist participate but do not split the composition.
+export type ParticipantRole = 'compositor' | 'letrista' | 'productor' | 'artista'
+
 export interface Person {
   id: string
   name: string
@@ -18,7 +24,7 @@ export interface Person {
 export interface Creator {
   personId: string
   name: string
-  role: string
+  role: ParticipantRole
 }
 
 export interface CompositionShare {

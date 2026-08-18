@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { worksRepository } from './repository'
+import { worksRepository, type WorkPatch } from './repository'
 import type { NewWorkInput, Work } from './types'
 
 export function useWorks() {
@@ -41,5 +41,14 @@ export function useWork(id: string) {
     }
   }, [id])
 
-  return { work, loading: work === undefined }
+  const updateWork = useCallback(
+    async (patch: WorkPatch) => {
+      const updated = await worksRepository.update(id, patch)
+      setWork(updated)
+      return updated
+    },
+    [id],
+  )
+
+  return { work, loading: work === undefined, updateWork }
 }

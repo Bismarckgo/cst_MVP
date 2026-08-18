@@ -1,7 +1,8 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import type { NewWorkInput } from '@/lib/works/types'
+import { ROLES, contributesToComposition } from '@/lib/works/roles'
+import type { NewWorkInput, ParticipantRole } from '@/lib/works/types'
 import { useWorks } from '@/lib/works/use-works'
 import {
   ArrowLeft,
@@ -18,6 +19,7 @@ import { useMemo, useState } from 'react'
 interface Participant {
   id: string
   name: string
+  role: ParticipantRole
   percentage: number
 }
 
@@ -49,17 +51,25 @@ export function NewWorkFlow() {
   const [title, setTitle] = useState('')
   const [titleTouched, setTitleTouched] = useState(false)
   const [participants, setParticipants] = useState<Participant[]>([
-    { id: newId(), name: '', percentage: 100 },
+    { id: newId(), name: '', role: 'compositor', percentage: 100 },
   ])
   const [saving, setSaving] = useState(false)
 
-  const total = useMemo(
-    () => participants.reduce((sum, p) => sum + (p.percentage || 0), 0),
+  const namedParticipants = participants.filter((p) => p.name.trim().length > 0)
+
+  // Only authorship roles (compositor / letrista) share the composition.
+  const authors = useMemo(
+    () =>
+      participants.filter(
+        (p) => p.name.trim().length > 0 && contributesToComposition(p.role),
+      ),
     [participants],
   )
-  const namedParticipants = participants.filter((p) => p.name.trim().length > 0)
-  const splitValid =
-    Math.round(total) === 100 && namedParticipants.length === participants.length
+  const authorsTotal = useMemo(
+    () => authors.reduce((sum, p) => sum + (p.percentage || 0), 0),
+    [authors],
+  )
+  const splitValid = authors.length > 0 && Math.round(authorsTotal) === 100
 
   function goCancel() {
     router.push('/catalog')
@@ -74,14 +84,19 @@ export function NewWorkFlow() {
   }
 
   function goToSplits() {
-    // Redistribute evenly across named participants entering the split step.
-    const named = participants.filter((p) => p.name.trim())
-    const shares = evenSplit(named.length)
+    // Redistribute evenly across the authors entering the split step.
+    const currentAuthors = participants.filter(
+      (p) => p.name.trim() && contributesToComposition(p.role),
+    )
+    const shares = evenSplit(currentAuthors.length)
     let i = 0
-    setParticipants(
-      participants
-        .filter((p) => p.name.trim())
-        .map((p) => ({ ...p, percentage: shares[i++] })),
+    setParticipants((prev) =>
+      prev.map((p) => {
+        if (!p.name.trim() || !contributesToComposition(p.role)) {
+          return { ...p, percentage: 0 }
+        }
+        return { ...p, percentage: shares[i++] ?? 0 }
+      }),
     )
     setStep(4)
   }
@@ -89,13 +104,19 @@ export function NewWorkFlow() {
   function addParticipant() {
     setParticipants((prev) => [
       ...prev,
-      { id: newId(), name: '', percentage: 0 },
+      { id: newId(), name: '', role: 'compositor', percentage: 0 },
     ])
   }
 
   function updateParticipantName(id: string, name: string) {
     setParticipants((prev) =>
       prev.map((p) => (p.id === id ? { ...p, name } : p)),
+    )
+  }
+
+  function updateParticipantRole(id: string, role: ParticipantRole) {
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, role } : p)),
     )
   }
 

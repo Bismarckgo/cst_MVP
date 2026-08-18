@@ -10,10 +10,18 @@
 
 import type { NewWorkInput, Work } from './types'
 
+export type WorkPatch = Partial<
+  Pick<
+    Work,
+    'title' | 'primaryArtist' | 'creators' | 'compositionShares' | 'status'
+  >
+>
+
 export interface WorksRepository {
   list(): Promise<Work[]>
   get(id: string): Promise<Work | null>
   create(input: NewWorkInput): Promise<Work>
+  update(id: string, patch: WorkPatch): Promise<Work>
 }
 
 const STORAGE_KEY = 'cst.works.v1'
@@ -69,6 +77,22 @@ class LocalWorksRepository implements WorksRepository {
     works.push(work)
     writeAll(works)
     return work
+  }
+
+  async update(id: string, patch: WorkPatch): Promise<Work> {
+    const works = readAll()
+    const index = works.findIndex((w) => w.id === id)
+    if (index === -1) {
+      throw new Error(`Work not found: ${id}`)
+    }
+    const updated: Work = {
+      ...works[index],
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    }
+    works[index] = updated
+    writeAll(works)
+    return updated
   }
 }
 
