@@ -1,19 +1,23 @@
 // ----------------------------------------------------------------------------
-// CST · Domain types (MVP 1)
+// CST · Domain types
 //
-// These are intentionally minimal. The full CST domain (ISWC, IPI, PRO,
-// publishers, recordings, releases, royalties, ...) is NOT modeled here.
-// Only what the "Sidebar → Catálogo → Nueva obra → Work" vertical requires.
+// Modeled after the CST Catalog MVP spec. A Work carries enough state to drive
+// the catalog table (status, composition/recording/splits progress, register
+// count) plus identifiers (ISWC, ISRC) and the participant/split data used by
+// the detail and edit views.
 // ----------------------------------------------------------------------------
 
 export type WorkType = 'song' | 'recording'
 
-export type WorkStatus = 'draft' | 'ready'
+export type WorkStatus = 'draft' | 'ready' | 'attention' | 'registered'
 
-// The role a person plays on a work. The role — not merely "participating" —
-// determines what kind of contributor they are and which splits apply to them.
-// Authorship roles (compositor, letrista) earn a composition share; the
-// producer and performing artist participate but do not split the composition.
+export type ComponentState = 'complete' | 'incomplete' | 'not_started'
+
+export type SplitsState = 'complete' | 'pending' | 'not_started'
+
+// The role a person plays on a work. Authorship roles (compositor, letrista)
+// earn a composition share; the producer and performing artist participate
+// but do not split the composition.
 export type ParticipantRole = 'compositor' | 'letrista' | 'productor' | 'artista'
 
 export interface Person {
@@ -41,6 +45,12 @@ export interface Work {
   primaryArtist: string
   creators: Creator[]
   compositionShares: CompositionShare[]
+  composition: ComponentState
+  recording: ComponentState
+  splits: SplitsState
+  register: number
+  iswc?: string
+  isrc?: string
   createdAt: string
   updatedAt: string
 }
@@ -50,6 +60,9 @@ export interface NewWorkInput {
   title: string
   type: WorkType
   primaryArtist: string
-  creators: Creator[]
-  compositionShares: CompositionShare[]
 }
+
+// Patch shape for editing an existing work.
+export type WorkPatch = Partial<
+  Omit<Work, 'id' | 'createdAt' | 'updatedAt'>
+>

@@ -1,4 +1,5 @@
 import { WorkDetailView } from '@/components/work-detail/work-detail-view'
+import { Suspense } from 'react'
 
 export default async function WorkDetailPage({
   params,
@@ -6,5 +7,9 @@ export default async function WorkDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  return <WorkDetailView id={id} />
+  return (
+    <Suspense fallback={null}>
+      <WorkDetailView id={id} />
+    </Suspense>
+  )
 }
