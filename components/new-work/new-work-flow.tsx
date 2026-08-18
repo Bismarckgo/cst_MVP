@@ -253,7 +253,7 @@ export function NewWorkFlow() {
         {step === 4 && (
           <StepSplits
             participants={participants}
-            total={total}
+            total={authorsTotal}
             valid={splitValid}
             saving={saving}
             onChangePct={updateParticipantPct}
