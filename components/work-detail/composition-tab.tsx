@@ -4,7 +4,7 @@ import { Panel, StateIcon } from '@/components/work-detail/ui'
 import { cn } from '@/lib/utils'
 import { compositionComplete, compositionTotal } from '@/lib/works/status'
 import type { Work } from '@/lib/works/types'
-import { ArrowRight, Download } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 
 export function CompositionTab({ work }: { work: Work }) {
   const total = Math.round(compositionTotal(work))
@@ -24,10 +24,6 @@ export function CompositionTab({ work }: { work: Work }) {
             {work.title}
           </h2>
           <p className="text-sm text-ink-500">Obra musical / canción</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <DownloadButton label="PRO" />
-          <DownloadButton label="MLC" />
         </div>
       </div>
 
@@ -128,20 +124,6 @@ export function CompositionTab({ work }: { work: Work }) {
         </button>
       </div>
     </div>
-  )
-}
-
-function DownloadButton({ label }: { label: string }) {
-  return (
-    <button
-      type="button"
-      disabled
-      title="Disponible próximamente"
-      className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-surface-shell px-3 py-1.5 text-xs font-semibold text-ink-500 opacity-70"
-    >
-      <Download className="size-3.5" />
-      {label}
-    </button>
   )
 }
 

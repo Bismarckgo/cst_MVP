@@ -1,5 +1,6 @@
 'use client'
 
+import { BulkRegistration } from '@/components/catalog/bulk-registration'
 import { WorkStatusBadge } from '@/components/catalog/work-status-badge'
 import { relativeTime, shortName } from '@/lib/works/format'
 import type { Work } from '@/lib/works/types'
