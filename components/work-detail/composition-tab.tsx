@@ -4,7 +4,7 @@ import { Panel, StateIcon } from '@/components/work-detail/ui'
 import { cn } from '@/lib/utils'
 import { compositionComplete, compositionTotal } from '@/lib/works/status'
 import type { Work } from '@/lib/works/types'
-import { Download } from 'lucide-react'
+import { ArrowRight, Download } from 'lucide-react'
 
 export function CompositionTab({ work }: { work: Work }) {
   const total = Math.round(compositionTotal(work))
@@ -17,7 +17,10 @@ export function CompositionTab({ work }: { work: Work }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-ink-900">
+          <p className="text-[11px] font-semibold tracking-wider text-ink-500 uppercase">
+            Composition
+          </p>
+          <h2 className="mt-1 text-lg font-bold tracking-tight text-ink-900">
             {work.title}
           </h2>
           <p className="text-sm text-ink-500">Obra musical / canción</p>
@@ -100,6 +103,30 @@ export function CompositionTab({ work }: { work: Work }) {
           />
         </ul>
       </Panel>
+
+      {/* NEXT */}
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-brand/30 bg-brand-light px-5 py-4">
+        <div className="flex items-center gap-3">
+          <ArrowRight className="size-5 shrink-0 text-brand" />
+          <div>
+            <p className="text-[11px] font-semibold tracking-wider text-brand uppercase">
+              Next
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-ink-900">
+              Review registration
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled
+          title="Disponible próximamente"
+          className="hidden shrink-0 cursor-not-allowed items-center gap-1 text-sm font-semibold text-brand opacity-70 sm:inline-flex"
+        >
+          Review
+          <ArrowRight className="size-4" />
+        </button>
+      </div>
     </div>
   )
 }
