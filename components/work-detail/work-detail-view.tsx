@@ -1,20 +1,21 @@
 'use client'
 
-import { ComponentStateBadge } from '@/components/catalog/component-state-badge'
+import { ComponentStateBadge, RegisterCell } from '@/components/catalog/component-state-badge'
 import { WorkStatusBadge } from '@/components/catalog/work-status-badge'
 import { EditWorkDrawer } from '@/components/work-detail/edit-work-drawer'
 import { useWork } from '@/lib/works/use-works'
 import { roleLabel } from '@/lib/works/roles'
-import { ArrowLeft, Pencil, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, Link2, Pencil, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 export function WorkDetailView({ id }: { id: string }) {
   const { work, loading, refresh } = useWork(id)
   const router = useRouter()
   const searchParams = useSearchParams()
   const editMode = searchParams.get('edit') === '1'
+  const [duplicateWork, setDuplicateWork] = useState<{ id: string; title: string } | null>(null)
 
   function openEdit() {
     router.push(`/works/${id}?edit=1`, { scroll: false })
@@ -25,7 +26,6 @@ export function WorkDetailView({ id }: { id: string }) {
     void refresh()
   }
 
-  // Close edit on Escape is handled inside drawer; also clean URL on unmount
   useEffect(() => {
     return () => {
       if (editMode) {
@@ -33,6 +33,18 @@ export function WorkDetailView({ id }: { id: string }) {
       }
     }
   }, [editMode, id, router])
+
+  // Load duplicate work info if duplicateOf is set
+  useEffect(() => {
+    if (work?.duplicateOf) {
+      void (async () => {
+        const dup = await (await import('@/lib/works/repository')).worksRepository.get(work.duplicateOf!)
+        if (dup) setDuplicateWork({ id: dup.id, title: dup.title })
+      })()
+    } else {
+      setDuplicateWork(null)
+    }
+  }, [work?.duplicateOf])
 
   return (
     <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-8 sm:py-10">
@@ -50,6 +62,27 @@ export function WorkDetailView({ id }: { id: string }) {
         <NotFound />
       ) : (
         <>
+          {/* Possible duplicate banner */}
+          {work.duplicateOf && duplicateWork && (
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-orange/30 bg-orange-light/30 px-4 py-3">
+              <TriangleAlert className="size-4 shrink-0 text-orange" strokeWidth={2.5} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink-900">
+                  Posible duplicado
+                </p>
+                <p className="text-xs text-ink-500">
+                  Vinculado a {duplicateWork.title}
+                </p>
+              </div>
+              <Link
+                href={`/works/${duplicateWork.id}`}
+                className="shrink-0 text-xs font-semibold text-brand hover:underline"
+              >
+                Abrir
+              </Link>
+            </div>
+          )}
+
           {/* Header */}
           <div className="mt-6 flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -72,26 +105,33 @@ export function WorkDetailView({ id }: { id: string }) {
           </div>
 
           {/* Identifiers */}
-          {(work.iswc || work.isrc) && (
-            <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {work.iswc && (
-                <div className="rounded-xl border border-surface-shell bg-surface-card px-4 py-3">
-                  <p className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
-                    ISWC
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-ink-900">{work.iswc}</p>
-                </div>
-              )}
-              {work.isrc && (
-                <div className="rounded-xl border border-surface-shell bg-surface-card px-4 py-3">
-                  <p className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
-                    ISRC
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-ink-900">{work.isrc}</p>
-                </div>
-              )}
-            </section>
-          )}
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {work.iswc && (
+              <div className="rounded-xl border border-surface-shell bg-surface-card px-4 py-3">
+                <p className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
+                  ISWC
+                </p>
+                <p className="mt-1 text-sm font-medium text-ink-900">{work.iswc}</p>
+              </div>
+            )}
+            {work.isrc && (
+              <div className="rounded-xl border border-surface-shell bg-surface-card px-4 py-3">
+                <p className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
+                  ISRC
+                </p>
+                <p className="mt-1 text-sm font-medium text-ink-900">{work.isrc}</p>
+              </div>
+            )}
+            <div className="rounded-xl border border-surface-shell bg-surface-card px-4 py-3">
+              <p className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
+                CstId
+              </p>
+              <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-ink-700">
+                <Link2 className="size-3 text-ink-300" />
+                {work.cstId}
+              </p>
+            </div>
+          </section>
 
           {/* Component states */}
           <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -154,20 +194,30 @@ export function WorkDetailView({ id }: { id: string }) {
               <h2 className="text-xs font-semibold tracking-wider text-ink-500 uppercase">
                 Registros
               </h2>
-              {work.register > 0 ? (
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-orange">
-                  <TriangleAlert className="size-4" strokeWidth={2.5} />
-                  {work.register} pendiente{work.register > 1 ? 's' : ''}
-                </span>
-              ) : work.status === 'registered' ? (
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-teal">
-                  <ShieldCheck className="size-4" strokeWidth={2.5} />
-                  Completo
-                </span>
-              ) : (
-                <span className="text-sm text-ink-300">—</span>
-              )}
+              <RegisterCell
+                pending={work.registerPending}
+                issues={work.registerIssues}
+                status={work.status}
+              />
             </div>
+            {(work.registerPending > 0 || work.registerIssues > 0) && (
+              <div className="mt-3 space-y-1.5 text-sm">
+                {work.registerIssues > 0 && (
+                  <p className="flex items-center gap-1.5 text-orange">
+                    <TriangleAlert className="size-3.5" strokeWidth={2.5} />
+                    {work.registerIssues} organismo{work.registerIssues > 1 ? 's' : ''} con problema
+                  </p>
+                )}
+                {work.registerPending > 0 && (
+                  <p className="text-ink-500">
+                    {work.registerPending} organismo{work.registerPending > 1 ? 's' : ''} sin iniciar
+                  </p>
+                )}
+              </div>
+            )}
+            {work.registerPending === 0 && work.registerIssues === 0 && work.status !== 'registered' && (
+              <p className="mt-3 text-sm text-ink-300">Not evaluated</p>
+            )}
           </section>
         </>
       )}
