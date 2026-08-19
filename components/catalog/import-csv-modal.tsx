@@ -3,15 +3,20 @@
 import { useWorks } from '@/lib/works/use-works'
 import type { ImportCsvRow, ImportPreview, ImportResult } from '@/lib/works/types'
 import { cn } from '@/lib/utils'
-import { CircleAlert as AlertCircle, ArrowLeft, Check, FileUp, GitMerge, SkipForward, Upload, X } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import {
+  ArrowLeft,
+  Check,
+  FileUp,
+  GitMerge,
+  SkipForward,
+  X,
+} from 'lucide-react'
 import { useRef, useState } from 'react'
 
 type Phase = 'upload' | 'review' | 'result'
 
 export function ImportCsvModal({ onClose }: { onClose: () => void }) {
   const { importPreview, importExecute } = useWorks()
-  const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<Phase>('upload')
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -244,7 +249,7 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
                 {result.invalid.length > 0 && (
                   <ResultGroup
                     label="Invalid"
-                    items={result.invalid.map((i) => `${i.title} (${i.reason})`)}
+                    items={result.invalid.map((inv) => `${inv.title} (${inv.reason})`)}
                     color="text-pink"
                   />
                 )}
@@ -344,10 +349,8 @@ function parseCsv(text: string): { rowIndex: number; title: string; artist: stri
   const lines = text.trim().split(/\r?\n/)
   if (lines.length < 2) return []
 
-  // Parse header
   const headers = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase())
 
-  // Map headers to known fields
   const titleIdx = headers.findIndex((h) => h === 'title' || h === 'titulo' || h === 'título')
   const artistIdx = headers.findIndex((h) => h === 'artist' || h === 'artista')
   const iswcIdx = headers.findIndex((h) => h === 'iswc')

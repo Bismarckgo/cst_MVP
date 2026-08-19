@@ -11,6 +11,7 @@ import type {
 } from '@/lib/works/types'
 import { useWork } from '@/lib/works/use-works'
 import { ROLES, contributesToComposition } from '@/lib/works/roles'
+import { worksRepository } from '@/lib/works/repository'
 import {
   Check,
   Music2,
@@ -54,10 +55,11 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
   const [composition, setComposition] = useState<ComponentState>('not_started')
   const [recording, setRecording] = useState<ComponentState>('not_started')
   const [splitsState, setSplitsState] = useState<SplitsState>('not_started')
-  const [register, setRegister] = useState(0)
+  const [registerPending, setRegisterPending] = useState(0)
+  const [registerIssues, setRegisterIssues] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [isrcError, setIsrcError] = useState<string | null>(null)
 
-  // Sync form state when work loads
   useEffect(() => {
     if (work) {
       setTitle(work.title)
@@ -70,11 +72,11 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
       setComposition(work.composition)
       setRecording(work.recording)
       setSplitsState(work.splits)
-      setRegister(work.register)
+      setRegisterPending(work.registerPending)
+      setRegisterIssues(work.registerIssues)
     }
   }, [work])
 
-  // Escape to close
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -93,8 +95,28 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
   )
   const sharesValid = Math.round(sharesTotal) === 100 && shares.length > 0
 
+  async function checkIsrc(value: string): Promise<boolean> {
+    const trimmed = value.trim()
+    if (!trimmed) return true
+    if (work?.isrc && trimmed.replace(/[-\s]/g, '').toUpperCase() === work.isrc.replace(/[-\s]/g, '').toUpperCase()) {
+      return true
+    }
+    const existing = await worksRepository.findByIsrc(trimmed)
+    if (existing) {
+      setIsrcError(`ISRC ya existe en "${existing.title}"`)
+      return false
+    }
+    setIsrcError(null)
+    return true
+  }
+
   async function handleSave() {
     if (saving) return
+    // ISRC blocking validation
+    if (isrc.trim()) {
+      const ok = await checkIsrc(isrc)
+      if (!ok) return
+    }
     setSaving(true)
     await updateWork({
       title: title.trim(),
@@ -107,7 +129,8 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
       composition,
       recording,
       splits: splitsState,
-      register,
+      registerPending,
+      registerIssues,
     })
     setSaving(false)
     onClose()
@@ -133,7 +156,6 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
   }
 
   function syncSharesFromAuthors() {
-    // Keep shares in sync with author creators
     const authorCreators = creators.filter((c) => contributesToComposition(c.role) && c.name.trim())
     const existing = new Map(shares.map((s) => [s.personId, s]))
     const updated = authorCreators.map((c, i) => {
@@ -144,7 +166,6 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
         percentage: ex?.percentage ?? (authorCreators.length > 0 ? Math.floor(100 / authorCreators.length) : 0),
       }
     })
-    // Distribute remainder
     if (updated.length > 0) {
       const total = updated.reduce((sum, s) => sum + s.percentage, 0)
       updated[0].percentage += 100 - total
@@ -246,10 +267,23 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
               <Field label="ISRC">
                 <input
                   value={isrc}
-                  onChange={(e) => setIsrc(e.target.value)}
+                  onChange={(e) => {
+                    setIsrc(e.target.value)
+                    setIsrcError(null)
+                  }}
+                  onBlur={(e) => void checkIsrc(e.target.value)}
                   placeholder="US-ABC-26-00001"
-                  className={inputClass}
+                  className={cn(
+                    inputClass,
+                    isrcError && 'border-pink focus:border-pink focus:ring-pink/20',
+                  )}
                 />
+                {isrcError && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-sm font-medium text-pink">
+                    <TriangleAlert className="size-3.5" strokeWidth={2.5} />
+                    {isrcError}
+                  </p>
+                )}
               </Field>
               <Field label="Estado">
                 <div className="flex flex-wrap gap-2">
@@ -445,23 +479,37 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
                 <div>
                   <p className="text-sm font-semibold text-ink-900">Registros</p>
                   <p className="text-xs text-ink-500">
-                    Número de organismos pendientes o con problema.
+                    Organismos pendientes y con problema.
                   </p>
                 </div>
               </div>
-              <Field label="Organismos pendientes">
+              <Field label="Organismos pendientes (no iniciado)">
                 <input
                   type="number"
                   min={0}
-                  value={register}
-                  onChange={(e) => setRegister(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+                  value={registerPending}
+                  onChange={(e) => setRegisterPending(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
                   className={cn(inputClass, 'w-20')}
                 />
               </Field>
-              {register > 0 && (
+              <Field label="Organismos con problema">
+                <input
+                  type="number"
+                  min={0}
+                  value={registerIssues}
+                  onChange={(e) => setRegisterIssues(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+                  className={cn(inputClass, 'w-20')}
+                />
+              </Field>
+              {registerIssues > 0 && (
                 <div className="flex items-center gap-2 rounded-xl bg-orange-light px-4 py-3 text-sm font-medium text-orange">
                   <TriangleAlert className="size-4" strokeWidth={2.5} />
-                  {register} organismo{register > 1 ? 's' : ''} pendiente{register > 1 ? 's' : ''}
+                  {registerIssues} organismo{registerIssues > 1 ? 's' : ''} con problema
+                </div>
+              )}
+              {registerPending > 0 && registerIssues === 0 && (
+                <div className="flex items-center gap-2 rounded-xl bg-surface px-4 py-3 text-sm font-medium text-ink-500">
+                  {registerPending} organismo{registerPending > 1 ? 's' : ''} sin iniciar
                 </div>
               )}
             </div>
@@ -480,7 +528,7 @@ export function EditWorkDrawer({ workId, onClose }: { workId: string; onClose: (
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !!isrcError}
             className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saving ? 'Guardando...' : 'Guardar'}
