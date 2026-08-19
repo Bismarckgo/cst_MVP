@@ -1,13 +1,20 @@
 // ----------------------------------------------------------------------------
 // CST · Works repository
 //
-// A tiny persistence layer with an async interface. Backed by localStorage so
-// the MVP persists for real. The UI only ever talks to this
-// `WorksRepository` interface — swapping in a real API later requires no
-// component changes.
+// A persistence layer with an async interface. Backed by localStorage so the
+// MVP persists for real. The UI only ever talks to this `WorksRepository`
+// interface — swapping in a real API later requires no component changes.
 // ----------------------------------------------------------------------------
 
-import type { NewWorkInput, Work, WorkPatch } from './types'
+import type {
+  Creator,
+  ImportCsvRow,
+  ImportPreview,
+  ImportResult,
+  NewWorkInput,
+  Work,
+  WorkPatch,
+} from './types'
 
 export type { WorkPatch }
 
@@ -18,15 +25,33 @@ export interface WorksRepository {
   update(id: string, patch: WorkPatch): Promise<Work>
   remove(id: string): Promise<void>
   duplicate(id: string): Promise<Work>
+  findByIsrc(isrc: string): Promise<Work | null>
+  findDuplicate(title: string, writerNames: string[]): Promise<Work | null>
+  importPreview(rows: ParsedCsvRow[]): Promise<ImportPreview>
+  importExecute(rows: ImportCsvRow[]): Promise<ImportResult>
 }
 
 const STORAGE_KEY = 'cst_catalog_works'
+
+export interface ParsedCsvRow {
+  rowIndex: number
+  title: string
+  artist: string
+  iswc?: string
+  isrc?: string
+  writers?: string
+}
 
 function createId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
   }
   return `w_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createCstId(): string {
+  const n = Math.floor(Math.random() * 900000 + 100000)
+  return `CST-${n}`
 }
 
 function readAll(): Work[] {
@@ -54,6 +79,7 @@ function seedWorks(): Work[] {
   return [
     {
       id: createId(),
+      cstId: createCstId(),
       title: 'Midnight',
       type: 'song',
       status: 'attention',
@@ -68,7 +94,8 @@ function seedWorks(): Work[] {
       composition: 'complete',
       recording: 'complete',
       splits: 'complete',
-      register: 2,
+      registerPending: 1,
+      registerIssues: 2,
       iswc: 'T-123.456.789-0',
       isrc: 'US-ABC-26-00001',
       createdAt: iso(86400000 * 14),
@@ -76,6 +103,7 @@ function seedWorks(): Work[] {
     },
     {
       id: createId(),
+      cstId: createCstId(),
       title: 'Summer Nights',
       type: 'song',
       status: 'ready',
@@ -89,7 +117,8 @@ function seedWorks(): Work[] {
       composition: 'complete',
       recording: 'complete',
       splits: 'complete',
-      register: 0,
+      registerPending: 0,
+      registerIssues: 0,
       iswc: 'T-987.654.321-0',
       isrc: 'US-ABC-26-00002',
       createdAt: iso(86400000 * 10),
@@ -97,6 +126,7 @@ function seedWorks(): Work[] {
     },
     {
       id: createId(),
+      cstId: createCstId(),
       title: 'No More',
       type: 'song',
       status: 'draft',
@@ -110,7 +140,8 @@ function seedWorks(): Work[] {
       composition: 'complete',
       recording: 'not_started',
       splits: 'pending',
-      register: 0,
+      registerPending: 0,
+      registerIssues: 0,
       iswc: undefined,
       isrc: undefined,
       createdAt: iso(86400000 * 6),
@@ -118,6 +149,7 @@ function seedWorks(): Work[] {
     },
     {
       id: createId(),
+      cstId: createCstId(),
       title: 'Aurora',
       type: 'song',
       status: 'registered',
@@ -132,7 +164,8 @@ function seedWorks(): Work[] {
       composition: 'complete',
       recording: 'complete',
       splits: 'complete',
-      register: 0,
+      registerPending: 0,
+      registerIssues: 0,
       iswc: 'T-555.111.222-0',
       isrc: 'US-ABC-26-00003',
       createdAt: iso(86400000 * 20),
@@ -149,6 +182,22 @@ function ensureSeed(): Work[] {
   return seed
 }
 
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function normalizeIsrc(isrc: string): string {
+  return isrc.replace(/[-\s]/g, '').toUpperCase()
+}
+
+function normalizeIswc(iswc: string): string {
+  return iswc.replace(/[-\s.]/g, '').toUpperCase()
+}
+
 class LocalWorksRepository implements WorksRepository {
   async list(): Promise<Work[]> {
     const works = ensureSeed()
@@ -163,16 +212,21 @@ class LocalWorksRepository implements WorksRepository {
     const now = new Date().toISOString()
     const work: Work = {
       id: createId(),
+      cstId: createCstId(),
       title: input.title.trim(),
       type: input.type,
       status: 'draft',
       primaryArtist: input.primaryArtist.trim(),
-      creators: [],
+      creators: input.creators ?? [],
       compositionShares: [],
       composition: 'not_started',
       recording: 'not_started',
       splits: 'not_started',
-      register: 0,
+      registerPending: 0,
+      registerIssues: 0,
+      duplicateOf: input.creators?.length
+        ? this.checkDuplicate(input.title, input.creators)?.id
+        : undefined,
       createdAt: now,
       updatedAt: now,
     }
@@ -192,6 +246,7 @@ class LocalWorksRepository implements WorksRepository {
       ...works[index],
       ...patch,
       id: works[index].id,
+      cstId: works[index].cstId,
       createdAt: works[index].createdAt,
       updatedAt: new Date().toISOString(),
     }
@@ -215,11 +270,14 @@ class LocalWorksRepository implements WorksRepository {
     const copy: Work = {
       ...original,
       id: createId(),
+      cstId: createCstId(),
       title: `${original.title} (copia)`,
       status: 'draft',
-      register: 0,
+      registerPending: 0,
+      registerIssues: 0,
       iswc: undefined,
       isrc: undefined,
+      duplicateOf: undefined,
       createdAt: now,
       updatedAt: now,
       creators: original.creators.map((c) => ({ ...c, personId: createId() })),
@@ -231,6 +289,172 @@ class LocalWorksRepository implements WorksRepository {
     works.unshift(copy)
     writeAll(works)
     return copy
+  }
+
+  async findByIsrc(isrc: string): Promise<Work | null> {
+    const normalized = normalizeIsrc(isrc)
+    if (!normalized) return null
+    return ensureSeed().find((w) => w.isrc && normalizeIsrc(w.isrc) === normalized) ?? null
+  }
+
+  async findDuplicate(title: string, writerNames: string[]): Promise<Work | null> {
+    return this.checkDuplicate(title, writerNames.map((n) => ({ name: n } as Creator))) ?? null
+  }
+
+  private checkDuplicate(title: string, creators: { name: string }[]): Work | null {
+    const normalizedTitle = normalizeName(title)
+    if (!normalizedTitle) return null
+    const writerNames = new Set(
+      creators.map((c) => normalizeName(c.name)).filter(Boolean),
+    )
+    if (writerNames.size === 0) return null
+    return ensureSeed().find((w) => {
+      if (normalizeName(w.title) !== normalizedTitle) return false
+      const existingWriters = new Set(
+        w.creators.map((c) => normalizeName(c.name)).filter(Boolean),
+      )
+      // Check if writer sets overlap significantly
+      let overlap = 0
+      for (const name of writerNames) {
+        if (existingWriters.has(name)) overlap++
+      }
+      return overlap > 0
+    })
+  }
+
+  // ------------------------------------------------------------------ Import
+
+  async importPreview(parsedRows: ParsedCsvRow[]): Promise<ImportPreview> {
+    const existing = ensureSeed()
+    const rows: ImportCsvRow[] = []
+    let newCount = 0
+    let conflictCount = 0
+    let invalidCount = 0
+
+    for (const row of parsedRows) {
+      // Validate: title and artist required
+      if (!row.title.trim() || !row.artist.trim()) {
+        invalidCount++
+        rows.push({
+          ...row,
+          classification: 'invalid',
+          invalidReason: !row.title.trim() ? 'Falta título' : 'Falta artista',
+        })
+        continue
+      }
+
+      // Check ISRC conflict
+      if (row.isrc) {
+        const normalizedIsrc = normalizeIsrc(row.isrc)
+        const match = existing.find(
+          (w) => w.isrc && normalizeIsrc(w.isrc) === normalizedIsrc,
+        )
+        if (match) {
+          conflictCount++
+          rows.push({
+            ...row,
+            classification: 'conflict',
+            existingWorkId: match.id,
+            existingTitle: match.title,
+            existingArtist: match.primaryArtist,
+            decision: 'pending',
+          })
+          continue
+        }
+      }
+
+      // Check ISWC conflict
+      if (row.iswc) {
+        const normalizedIswc = normalizeIswc(row.iswc)
+        const match = existing.find(
+          (w) => w.iswc && normalizeIswc(w.iswc) === normalizedIswc,
+        )
+        if (match) {
+          conflictCount++
+          rows.push({
+            ...row,
+            classification: 'conflict',
+            existingWorkId: match.id,
+            existingTitle: match.title,
+            existingArtist: match.primaryArtist,
+            decision: 'pending',
+          })
+          continue
+        }
+      }
+
+      newCount++
+      rows.push({ ...row, classification: 'new' })
+    }
+
+    return { rows, newCount, conflictCount, invalidCount }
+  }
+
+  async importExecute(rows: ImportCsvRow[]): Promise<ImportResult> {
+    const works = readAll()
+    const result: ImportResult = {
+      created: [],
+      merged: [],
+      skipped: [],
+      invalid: [],
+    }
+
+    for (const row of rows) {
+      if (row.classification === 'invalid') {
+        result.invalid.push({ title: row.title, reason: row.invalidReason ?? 'Inválida' })
+        continue
+      }
+
+      if (row.classification === 'conflict') {
+        if (row.decision === 'skip' || !row.decision) {
+          result.skipped.push({ title: row.title })
+          continue
+        }
+        if (row.decision === 'merge' && row.existingWorkId) {
+          const idx = works.findIndex((w) => w.id === row.existingWorkId)
+          if (idx !== -1) {
+            const existing = works[idx]
+            // Merge: only fill empty fields, never overwrite
+            const merged: Work = {
+              ...existing,
+              iswc: existing.iswc || (row.iswc?.trim() || undefined),
+              isrc: existing.isrc || (row.isrc?.trim() || undefined),
+              updatedAt: new Date().toISOString(),
+            }
+            works[idx] = merged
+            result.merged.push({ id: merged.id, title: merged.title })
+          }
+          continue
+        }
+      }
+
+      // New work
+      const now = new Date().toISOString()
+      const work: Work = {
+        id: createId(),
+        cstId: createCstId(),
+        title: row.title.trim(),
+        type: 'song',
+        status: 'draft',
+        primaryArtist: row.artist.trim(),
+        creators: [],
+        compositionShares: [],
+        composition: 'not_started',
+        recording: 'not_started',
+        splits: 'not_started',
+        registerPending: 0,
+        registerIssues: 0,
+        iswc: row.iswc?.trim() || undefined,
+        isrc: row.isrc?.trim() || undefined,
+        createdAt: now,
+        updatedAt: now,
+      }
+      works.push(work)
+      result.created.push({ id: work.id, title: work.title })
+    }
+
+    writeAll(works)
+    return result
   }
 }
 

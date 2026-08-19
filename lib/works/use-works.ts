@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { worksRepository, type WorkPatch } from './repository'
-import type { NewWorkInput, Work } from './types'
+import type { ImportPreview, ImportResult, NewWorkInput, Work } from './types'
 
 export function useWorks() {
   const [works, setWorks] = useState<Work[] | null>(null)
@@ -51,6 +51,33 @@ export function useWorks() {
     [refresh],
   )
 
+  const findByIsrc = useCallback(async (isrc: string) => {
+    return worksRepository.findByIsrc(isrc)
+  }, [])
+
+  const findDuplicate = useCallback(
+    async (title: string, writerNames: string[]) => {
+      return worksRepository.findDuplicate(title, writerNames)
+    },
+    [],
+  )
+
+  const importPreview = useCallback(
+    async (rows: { rowIndex: number; title: string; artist: string; iswc?: string; isrc?: string; writers?: string }[]) => {
+      return worksRepository.importPreview(rows)
+    },
+    [],
+  )
+
+  const importExecute = useCallback(
+    async (rows: ImportPreview['rows']): Promise<ImportResult> => {
+      const result = await worksRepository.importExecute(rows)
+      await refresh()
+      return result
+    },
+    [refresh],
+  )
+
   return {
     works,
     loading: works === null,
@@ -59,6 +86,10 @@ export function useWorks() {
     updateWork,
     deleteWork,
     duplicateWork,
+    findByIsrc,
+    findDuplicate,
+    importPreview,
+    importExecute,
   }
 }
 

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { ComponentState, SplitsState } from '@/lib/works/types'
-import { Check, Circle, Clock, Minus } from 'lucide-react'
+import { Check, Circle, Clock, Minus, TriangleAlert } from 'lucide-react'
 
 type CellState = ComponentState | SplitsState
 
@@ -64,4 +64,36 @@ export function ComponentStateBadge({
       {type === 'splits' && state === 'complete' ? '100%' : config.label}
     </span>
   )
+}
+
+// Register cell: distinguishes "N not started" (informational) from
+// "⚠ N with problem" (actionable) from "Not evaluated" (no info).
+export function RegisterCell({
+  pending,
+  issues,
+  status,
+}: {
+  pending: number
+  issues: number
+  status: string
+}) {
+  if (issues > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-orange">
+        <TriangleAlert className="size-4" strokeWidth={2.5} />
+        {issues}
+      </span>
+    )
+  }
+  if (pending > 0) {
+    return <span className="text-sm font-medium text-ink-500">{pending}</span>
+  }
+  if (status === 'registered') {
+    return (
+      <span className="inline-flex items-center text-teal">
+        <Check className="size-4" strokeWidth={2.5} />
+      </span>
+    )
+  }
+  return <span className="text-sm text-ink-300">Not evaluated</span>
 }

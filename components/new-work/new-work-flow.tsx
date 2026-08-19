@@ -8,6 +8,7 @@ import {
   Check,
   Disc3,
   Music2,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -19,7 +20,7 @@ const STEP_LABELS = ['Tipo', 'Datos', 'Listo']
 
 export function NewWorkFlow() {
   const router = useRouter()
-  const { createWork } = useWorks()
+  const { createWork, findDuplicate } = useWorks()
 
   const [step, setStep] = useState<Step>(1)
   const [title, setTitle] = useState('')
@@ -28,6 +29,7 @@ export function NewWorkFlow() {
   const [artistTouched, setArtistTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [createdId, setCreatedId] = useState<string | null>(null)
+  const [duplicateWarning, setDuplicateWarning] = useState<{ id: string; title: string; artist: string } | null>(null)
 
   function goCancel() {
     router.push('/catalog')
@@ -40,15 +42,40 @@ export function NewWorkFlow() {
   async function handleSave() {
     if (!title.trim() || !artist.trim() || saving) return
     setSaving(true)
+
+    // Check for possible duplicate: same title + same writer
+    // For the minimal create flow, the artist is the initial writer
+    const existing = await findDuplicate(title.trim(), [artist.trim()])
+    if (existing) {
+      setDuplicateWarning({ id: existing.id, title: existing.title, artist: existing.primaryArtist })
+      setSaving(false)
+      return
+    }
+
+    await doCreate()
+  }
+
+  async function doCreate() {
+    setSaving(true)
     const input: NewWorkInput = {
       title: title.trim(),
       type: 'song',
       primaryArtist: artist.trim(),
+      creators: [{ personId: crypto.randomUUID(), name: artist.trim(), role: 'compositor' }],
     }
     const work = await createWork(input)
     setSaving(false)
     setCreatedId(work.id)
     setStep(3)
+  }
+
+  function continueAnyway() {
+    setDuplicateWarning(null)
+    void doCreate()
+  }
+
+  function openExistingWork() {
+    if (duplicateWarning) router.push(`/works/${duplicateWarning.id}`)
   }
 
   function viewWork() {
@@ -62,6 +89,7 @@ export function NewWorkFlow() {
     setTitleTouched(false)
     setArtistTouched(false)
     setCreatedId(null)
+    setDuplicateWarning(null)
   }
 
   return (
@@ -161,6 +189,47 @@ export function NewWorkFlow() {
           />
         )}
       </div>
+
+      {/* Duplicate warning modal */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink-900/30 backdrop-blur-sm" onClick={() => setDuplicateWarning(null)} aria-hidden />
+          <div className="relative w-full max-w-md rounded-2xl bg-surface-card p-6 shadow-card-hover">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-orange-light text-orange">
+                <TriangleAlert className="size-5" strokeWidth={2.5} />
+              </span>
+              <div>
+                <h3 className="text-base font-bold text-ink-900">
+                  Posible duplicado
+                </h3>
+                <p className="mt-1 text-sm text-ink-500">
+                  Una obra con el mismo título y escritores ya existe:
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink-700">
+                  {duplicateWarning.title} — {duplicateWarning.artist}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={openExistingWork}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-surface-shell px-4 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:bg-surface"
+              >
+                Abrir obra existente
+              </button>
+              <button
+                type="button"
+                onClick={continueAnyway}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-dark"
+              >
+                Continuar de todos modos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,9 +1,9 @@
 // ----------------------------------------------------------------------------
 // CST · Domain types
 //
-// Modeled after the CST Catalog MVP spec. A Work carries enough state to drive
+// Modeled after the CST Catalog spec. A Work carries enough state to drive
 // the catalog table (status, composition/recording/splits progress, register
-// count) plus identifiers (ISWC, ISRC) and the participant/split data used by
+// counts) plus identifiers (ISWC, ISRC) and the participant/split data used by
 // the detail and edit views.
 // ----------------------------------------------------------------------------
 
@@ -39,6 +39,7 @@ export interface CompositionShare {
 
 export interface Work {
   id: string
+  cstId: string
   title: string
   type: WorkType
   status: WorkStatus
@@ -48,9 +49,14 @@ export interface Work {
   composition: ComponentState
   recording: ComponentState
   splits: SplitsState
-  register: number
+  /** Organisms not yet started — informational, not a problem. */
+  registerPending: number
+  /** Organisms with a problem (rejection, conflict, actionable condition). */
+  registerIssues: number
   iswc?: string
   isrc?: string
+  /** ID of a Work this one is a possible duplicate of, if detected. */
+  duplicateOf?: string
   createdAt: string
   updatedAt: string
 }
@@ -60,9 +66,48 @@ export interface NewWorkInput {
   title: string
   type: WorkType
   primaryArtist: string
+  creators?: Creator[]
 }
 
 // Patch shape for editing an existing work.
 export type WorkPatch = Partial<
-  Omit<Work, 'id' | 'createdAt' | 'updatedAt'>
+  Omit<Work, 'id' | 'cstId' | 'createdAt' | 'updatedAt'>
 >
+
+// ----------------------------------------------------------------------------
+// CSV Import types
+// ----------------------------------------------------------------------------
+
+export type ImportRowClassification = 'new' | 'conflict' | 'invalid'
+
+export interface ImportCsvRow {
+  rowIndex: number
+  title: string
+  artist: string
+  iswc?: string
+  isrc?: string
+  writers?: string
+  classification: ImportRowClassification
+  /** For conflicts: the existing work that matched. */
+  existingWorkId?: string
+  existingTitle?: string
+  existingArtist?: string
+  /** For invalid: reason. */
+  invalidReason?: string
+  /** User decision for conflicts. */
+  decision?: 'merge' | 'skip' | 'pending'
+}
+
+export interface ImportPreview {
+  rows: ImportCsvRow[]
+  newCount: number
+  conflictCount: number
+  invalidCount: number
+}
+
+export interface ImportResult {
+  created: { id: string; title: string }[]
+  merged: { id: string; title: string }[]
+  skipped: { title: string }[]
+  invalid: { title: string; reason: string }[]
+}

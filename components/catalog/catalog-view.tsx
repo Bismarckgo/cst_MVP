@@ -1,9 +1,10 @@
 'use client'
 
-import { ComponentStateBadge } from '@/components/catalog/component-state-badge'
+import { ComponentStateBadge, RegisterCell } from '@/components/catalog/component-state-badge'
 import { WorkStatusBadge } from '@/components/catalog/work-status-badge'
+import { ImportCsvModal } from '@/components/catalog/import-csv-modal'
 import { normalizeSearch, relativeTime, shortName } from '@/lib/works/format'
-import type { Work, WorkStatus } from '@/lib/works/types'
+import type { Work, WorkStatus, WorkType } from '@/lib/works/types'
 import { useWorks } from '@/lib/works/use-works'
 import { cn } from '@/lib/utils'
 import {
@@ -15,11 +16,12 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  Upload,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const STATUS_ORDER: WorkStatus[] = ['draft', 'attention', 'ready', 'registered']
 
@@ -29,6 +31,13 @@ const STATUS_LABELS: Record<WorkStatus, string> = {
   ready: 'Ready',
   registered: 'Registered',
 }
+
+const TYPE_LABELS: Record<WorkType, string> = {
+  song: 'Composition',
+  recording: 'Recording',
+}
+
+type RegistrationFilter = 'missing' | 'submitted' | 'complete'
 
 function workMatches(work: Work, q: string): boolean {
   const n = normalizeSearch(q)
@@ -47,8 +56,8 @@ export function CatalogView() {
   const [searchInput, setSearchInput] = useState('')
   const [query, setQuery] = useState('')
   const [activeStatuses, setActiveStatuses] = useState<Set<WorkStatus>>(new Set())
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [activeTypes, setActiveTypes] = useState<Set<WorkType>>(new Set())
+  const [showImport, setShowImport] = useState(false)
 
   // Debounce search 300ms
   useEffect(() => {
@@ -56,29 +65,20 @@ export function CatalogView() {
     return () => clearTimeout(t)
   }, [searchInput])
 
-  // Close row menu on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null)
-      }
-    }
-    if (openMenuId) {
-      document.addEventListener('mousedown', handleClick)
-      return () => document.removeEventListener('mousedown', handleClick)
-    }
-  }, [openMenuId])
-
   const filtered = useMemo(() => {
     if (!works) return []
     let result = works.filter((w) => workMatches(w, query))
     if (activeStatuses.size > 0) {
       result = result.filter((w) => activeStatuses.has(w.status))
     }
+    if (activeTypes.size > 0) {
+      result = result.filter((w) => activeTypes.has(w.type))
+    }
     return result
-  }, [works, query, activeStatuses])
+  }, [works, query, activeStatuses, activeTypes])
 
   const hasWorks = (works?.length ?? 0) > 0
+  const hasActiveFilters = activeStatuses.size > 0 || activeTypes.size > 0 || searchInput
 
   function toggleStatus(status: WorkStatus) {
     setActiveStatuses((prev) => {
@@ -89,18 +89,26 @@ export function CatalogView() {
     })
   }
 
+  function toggleType(type: WorkType) {
+    setActiveTypes((prev) => {
+      const next = new Set(prev)
+      if (next.has(type)) next.delete(type)
+      else next.add(type)
+      return next
+    })
+  }
+
   function clearFilters() {
     setActiveStatuses(new Set())
+    setActiveTypes(new Set())
     setSearchInput('')
   }
 
   async function handleDelete(id: string) {
-    setOpenMenuId(null)
     await deleteWork(id)
   }
 
   async function handleDuplicate(id: string) {
-    setOpenMenuId(null)
     await duplicateWork(id)
   }
 
@@ -116,13 +124,23 @@ export function CatalogView() {
             Tus obras, créditos y splits de composición.
           </p>
         </div>
-        <Link
-          href="/catalog/new"
-          className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
-        >
-          <Plus className="size-4" strokeWidth={2.5} />
-          Nueva obra
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-surface-shell bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:bg-surface"
+          >
+            <Upload className="size-4" />
+            Importar CSV
+          </button>
+          <Link
+            href="/catalog/new"
+            className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+          >
+            <Plus className="size-4" strokeWidth={2.5} />
+            Nueva obra
+          </Link>
+        </div>
       </div>
 
       {/* Search + Filters */}
@@ -137,31 +155,34 @@ export function CatalogView() {
             className="w-full rounded-xl border border-surface-shell bg-surface-card py-2.5 pr-4 pl-10 text-sm text-ink-700 placeholder:text-ink-300 outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {STATUS_ORDER.map((status) => {
-            const active = activeStatuses.has(status)
-            return (
-              <button
-                key={status}
-                type="button"
-                onClick={() => toggleStatus(status)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors',
-                  active
-                    ? 'border-brand bg-brand-light text-brand'
-                    : 'border-surface-shell bg-surface-card text-ink-500 hover:text-ink-700',
-                )}
-              >
-                {active && <Check className="size-3" strokeWidth={3} />}
-                {STATUS_LABELS[status]}
-              </button>
-            )
-          })}
-        </div>
+      </div>
+
+      {/* Filter groups */}
+      <div className="mt-3 space-y-2">
+        <FilterGroup label="Estado">
+          {STATUS_ORDER.map((status) => (
+            <FilterToggle
+              key={status}
+              label={STATUS_LABELS[status]}
+              active={activeStatuses.has(status)}
+              onClick={() => toggleStatus(status)}
+            />
+          ))}
+        </FilterGroup>
+        <FilterGroup label="Tipo">
+          {(['song', 'recording'] as WorkType[]).map((type) => (
+            <FilterToggle
+              key={type}
+              label={TYPE_LABELS[type]}
+              active={activeTypes.has(type)}
+              onClick={() => toggleType(type)}
+            />
+          ))}
+        </FilterGroup>
       </div>
 
       {/* Active filter chips */}
-      {(activeStatuses.size > 0 || searchInput) && (
+      {hasActiveFilters && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {searchInput && (
             <FilterChip
@@ -174,6 +195,13 @@ export function CatalogView() {
               key={status}
               label={STATUS_LABELS[status]}
               onRemove={() => toggleStatus(status)}
+            />
+          ))}
+          {Array.from(activeTypes).map((type) => (
+            <FilterChip
+              key={type}
+              label={TYPE_LABELS[type]}
+              onRemove={() => toggleType(type)}
             />
           ))}
           <button
@@ -221,11 +249,22 @@ export function CatalogView() {
                         <Music2 className="size-4" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-ink-900">
-                          {work.title}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-ink-900">
+                            {work.title}
+                          </p>
+                          {work.duplicateOf && (
+                            <span
+                              title="Posible duplicado"
+                              className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-orange-light px-1.5 py-0.5 text-[10px] font-semibold text-orange"
+                            >
+                              <TriangleAlert className="size-2.5" strokeWidth={2.5} />
+                              Dup
+                            </span>
+                          )}
+                        </div>
                         <p className="truncate text-xs text-ink-500">
-                          Actualizada {relativeTime(work.updatedAt)}
+                          Updated {relativeTime(work.updatedAt)}
                         </p>
                       </div>
                     </div>
@@ -256,24 +295,17 @@ export function CatalogView() {
                     </div>
 
                     {/* Register */}
-                    <div className="text-sm">
-                      {work.register > 0 ? (
-                        <span className="inline-flex items-center gap-1 font-medium text-orange">
-                          <TriangleAlert className="size-4" strokeWidth={2.5} />
-                          {work.register}
-                        </span>
-                      ) : work.status === 'registered' ? (
-                        <span className="inline-flex items-center text-teal">
-                          <Check className="size-4" strokeWidth={2.5} />
-                        </span>
-                      ) : (
-                        <span className="text-ink-300">—</span>
-                      )}
+                    <div>
+                      <RegisterCell
+                        pending={work.registerPending}
+                        issues={work.registerIssues}
+                        status={work.status}
+                      />
                     </div>
                   </button>
 
-                  {/* Hover actions */}
-                  <div className="absolute top-1/2 right-3 hidden -translate-y-1/2 items-center gap-1 rounded-xl bg-surface-card shadow-card-hover md:flex md:opacity-0 md:transition-opacity group-hover:md:opacity-100">
+                  {/* Row actions — visible on hover (desktop) and always (touch) */}
+                  <div className="absolute top-1/2 right-3 flex -translate-y-1/2 items-center gap-1 rounded-xl bg-surface-card shadow-card-hover md:opacity-0 md:transition-opacity md:group-hover:md:opacity-100">
                     <RowAction
                       icon={Pencil}
                       label="Editar"
@@ -306,7 +338,48 @@ export function CatalogView() {
           </div>
         )}
       </div>
+
+      {showImport && (
+        <ImportCsvModal onClose={() => setShowImport(false)} />
+      )}
     </div>
+  )
+}
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-16 shrink-0 text-[11px] font-semibold tracking-wider text-ink-300 uppercase">
+        {label}
+      </span>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  )
+}
+
+function FilterToggle({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors',
+        active
+          ? 'border-brand bg-brand-light text-brand'
+          : 'border-surface-shell bg-surface-card text-ink-500 hover:text-ink-700',
+      )}
+    >
+      {active && <Check className="size-3" strokeWidth={3} />}
+      {label}
+    </button>
   )
 }
 
