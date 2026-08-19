@@ -1,6 +1,6 @@
 'use client'
 
-import { ComponentStateBadge, RegisterCell } from '@/components/catalog/component-state-badge'
+import { BulkRegistration } from '@/components/catalog/bulk-registration'
 import { WorkStatusBadge } from '@/components/catalog/work-status-badge'
 import { ImportCsvModal } from '@/components/catalog/import-csv-modal'
 import { normalizeSearch, relativeTime, shortName } from '@/lib/works/format'

@@ -90,6 +90,26 @@ export function NewWorkFlow() {
     setArtistTouched(false)
     setCreatedId(null)
     setDuplicateWarning(null)
+  async function handleSave() {
+    if (!splitValid || saving) return
+    setSaving(true)
+    const input: NewWorkInput = {
+      title: title.trim(),
+      type: 'song',
+      primaryArtist: namedParticipants[0]?.name.trim() ?? '',
+      creators: namedParticipants.map((p) => ({
+        personId: p.id,
+        name: p.name.trim(),
+        role: p.role,
+      })),
+      compositionShares: namedParticipants.map((p) => ({
+        personId: p.id,
+        name: p.name.trim(),
+        percentage: p.percentage,
+      })),
+    }
+    const work = await createWork(input)
+    router.push(`/works/${work.id}`)
   }
 
   return (
@@ -186,6 +206,15 @@ export function NewWorkFlow() {
             title={title}
             onView={viewWork}
             onCreateAnother={createAnother}
+        {step === 4 && (
+          <StepSplits
+            participants={participants}
+            total={authorsTotal}
+            valid={splitValid}
+            saving={saving}
+            onChangePct={updateParticipantPct}
+            onBack={() => setStep(3)}
+            onSave={handleSave}
           />
         )}
       </div>
