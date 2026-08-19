@@ -143,7 +143,7 @@ export function NewWorkFlow() {
       creators: namedParticipants.map((p) => ({
         personId: p.id,
         name: p.name.trim(),
-        role: 'Compositor',
+        role: p.role,
       })),
       compositionShares: namedParticipants.map((p) => ({
         personId: p.id,
