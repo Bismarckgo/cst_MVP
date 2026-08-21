@@ -1,138 +1,95 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { ROLES, contributesToComposition } from '@/lib/works/roles'
-import type { NewWorkInput, ParticipantRole } from '@/lib/works/types'
+import type { NewWorkInput, WorkType } from '@/lib/works/types'
 import { useWorks } from '@/lib/works/use-works'
 import {
   ArrowLeft,
   Check,
   Disc3,
   Music2,
-  Plus,
-  Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
-interface Participant {
-  id: string
-  name: string
-  role: ParticipantRole
-  percentage: number
-}
+type Step = 1 | 2 | 3
 
-type Step = 1 | 2 | 3 | 4
-
-const STEP_LABELS = ['Tipo', 'Título', 'Participantes', 'Splits']
-
-function newId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-  return `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-// Distribute 100% as evenly as possible, remainder goes to the first person.
-function evenSplit(count: number): number[] {
-  if (count === 0) return []
-  const base = Math.floor(100 / count)
-  const shares = new Array(count).fill(base)
-  shares[0] += 100 - base * count
-  return shares
-}
+const STEP_LABELS = ['Tipo', 'Datos', 'Listo']
 
 export function NewWorkFlow() {
   const router = useRouter()
-  const { createWork } = useWorks()
+  const { createWork, findDuplicate } = useWorks()
 
   const [step, setStep] = useState<Step>(1)
   const [title, setTitle] = useState('')
+  const [artist, setArtist] = useState('')
   const [titleTouched, setTitleTouched] = useState(false)
-  const [participants, setParticipants] = useState<Participant[]>([
-    { id: newId(), name: '', role: 'compositor', percentage: 100 },
-  ])
+  const [artistTouched, setArtistTouched] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  const namedParticipants = participants.filter((p) => p.name.trim().length > 0)
-
-  // Only authorship roles (compositor / letrista) share the composition.
-  const authors = useMemo(
-    () =>
-      participants.filter(
-        (p) => p.name.trim().length > 0 && contributesToComposition(p.role),
-      ),
-    [participants],
-  )
-  const authorsTotal = useMemo(
-    () => authors.reduce((sum, p) => sum + (p.percentage || 0), 0),
-    [authors],
-  )
-  const splitValid = authors.length > 0 && Math.round(authorsTotal) === 100
+  const [createdId, setCreatedId] = useState<string | null>(null)
+  const [duplicateWarning, setDuplicateWarning] = useState<{ id: string; title: string; artist: string } | null>(null)
 
   function goCancel() {
     router.push('/catalog')
   }
 
-  function goToParticipants() {
-    if (!title.trim()) {
-      setTitleTouched(true)
+  function selectType(type: WorkType) {
+    if (type === 'song') setStep(2)
+  }
+
+  async function handleSave() {
+    if (!title.trim() || !artist.trim() || saving) return
+    setSaving(true)
+
+    // Check for possible duplicate: same title + same writer
+    // For the minimal create flow, the artist is the initial writer
+    const existing = await findDuplicate(title.trim(), [artist.trim()])
+    if (existing) {
+      setDuplicateWarning({ id: existing.id, title: existing.title, artist: existing.primaryArtist })
+      setSaving(false)
       return
     }
+
+    await doCreate()
+  }
+
+  async function doCreate() {
+    setSaving(true)
+    const input: NewWorkInput = {
+      title: title.trim(),
+      type: 'song',
+      primaryArtist: artist.trim(),
+      creators: [{ personId: crypto.randomUUID(), name: artist.trim(), role: 'compositor' }],
+    }
+    const work = await createWork(input)
+    setSaving(false)
+    setCreatedId(work.id)
     setStep(3)
   }
 
-  function goToSplits() {
-    // Redistribute evenly across the authors entering the split step.
-    const currentAuthors = participants.filter(
-      (p) => p.name.trim() && contributesToComposition(p.role),
-    )
-    const shares = evenSplit(currentAuthors.length)
-    let i = 0
-    setParticipants((prev) =>
-      prev.map((p) => {
-        if (!p.name.trim() || !contributesToComposition(p.role)) {
-          return { ...p, percentage: 0 }
-        }
-        return { ...p, percentage: shares[i++] ?? 0 }
-      }),
-    )
-    setStep(4)
+  function continueAnyway() {
+    setDuplicateWarning(null)
+    void doCreate()
   }
 
-  function addParticipant() {
-    setParticipants((prev) => [
-      ...prev,
-      { id: newId(), name: '', role: 'compositor', percentage: 0 },
-    ])
+  function openExistingWork() {
+    if (duplicateWarning) router.push(`/works/${duplicateWarning.id}`)
   }
 
-  function updateParticipantName(id: string, name: string) {
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, name } : p)),
-    )
+  function viewWork() {
+    if (createdId) router.push(`/works/${createdId}`)
   }
 
-  function updateParticipantRole(id: string, role: ParticipantRole) {
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, role } : p)),
-    )
-  }
-
-  function updateParticipantPct(id: string, value: string) {
-    const pct = Math.max(0, Math.min(100, Number.parseInt(value, 10) || 0))
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, percentage: pct } : p)),
-    )
-  }
-
-  function removeParticipant(id: string) {
-    setParticipants((prev) =>
-      prev.length > 1 ? prev.filter((p) => p.id !== id) : prev,
-    )
-  }
-
+  function createAnother() {
+    setStep(1)
+    setTitle('')
+    setArtist('')
+    setTitleTouched(false)
+    setArtistTouched(false)
+    setCreatedId(null)
+    setDuplicateWarning(null)
   async function handleSave() {
     if (!splitValid || saving) return
     setSaving(true)
@@ -178,78 +135,77 @@ export function NewWorkFlow() {
       </div>
 
       {/* Stepper */}
-      <div className="mt-6 flex items-center gap-2">
-        {STEP_LABELS.map((label, i) => {
-          const index = (i + 1) as Step
-          const done = index < step
-          const current = index === step
-          return (
-            <div key={label} className="flex flex-1 items-center gap-2">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    'flex size-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors',
-                    current && 'bg-brand text-white',
-                    done && 'bg-brand-light text-brand',
-                    !current && !done && 'bg-surface-shell text-ink-500',
-                  )}
-                >
-                  {done ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    'hidden text-xs font-medium sm:block',
-                    current ? 'text-ink-900' : 'text-ink-500',
-                  )}
-                >
-                  {label}
-                </span>
+      {step < 3 && (
+        <div className="mt-6 flex items-center gap-2">
+          {STEP_LABELS.map((label, i) => {
+            const index = (i + 1) as Step
+            const done = index < step
+            const current = index === step
+            return (
+              <div key={label} className="flex flex-1 items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'flex size-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors',
+                      current && 'bg-brand text-white',
+                      done && 'bg-brand-light text-brand',
+                      !current && !done && 'bg-surface-shell text-ink-500',
+                    )}
+                  >
+                    {done ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      'hidden text-xs font-medium sm:block',
+                      current ? 'text-ink-900' : 'text-ink-500',
+                    )}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {i < STEP_LABELS.length - 1 && (
+                  <span
+                    className={cn(
+                      'h-px flex-1',
+                      done ? 'bg-brand-light' : 'bg-surface-shell',
+                    )}
+                  />
+                )}
               </div>
-              {i < STEP_LABELS.length - 1 && (
-                <span
-                  className={cn(
-                    'h-px flex-1',
-                    done ? 'bg-brand-light' : 'bg-surface-shell',
-                  )}
-                />
-              )}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Card */}
       <div className="mt-6 rounded-2xl border border-surface-shell bg-surface-card p-6 shadow-card sm:p-8">
-        {step === 1 && (
-          <StepType
-            onSelectSong={() => setStep(2)}
-          />
-        )}
+        {step === 1 && <StepType onSelectSong={() => selectType('song')} />}
 
         {step === 2 && (
-          <StepTitle
+          <StepDetails
             title={title}
-            error={titleTouched && !title.trim()}
-            onChange={(v) => {
+            artist={artist}
+            titleError={titleTouched && !title.trim()}
+            artistError={artistTouched && !artist.trim()}
+            onTitleChange={(v) => {
               setTitle(v)
               if (v.trim()) setTitleTouched(false)
             }}
+            onArtistChange={(v) => {
+              setArtist(v)
+              if (v.trim()) setArtistTouched(false)
+            }}
             onBack={() => setStep(1)}
-            onContinue={goToParticipants}
+            onSave={handleSave}
+            saving={saving}
           />
         )}
 
-        {step === 3 && (
-          <StepParticipants
-            participants={participants}
-            onChangeName={updateParticipantName}
-            onAdd={addParticipant}
-            onRemove={removeParticipant}
-            onBack={() => setStep(2)}
-            onContinue={goToSplits}
-          />
-        )}
-
+        {step === 3 && createdId && (
+          <StepConfirmation
+            title={title}
+            onView={viewWork}
+            onCreateAnother={createAnother}
         {step === 4 && (
           <StepSplits
             participants={participants}
@@ -262,6 +218,47 @@ export function NewWorkFlow() {
           />
         )}
       </div>
+
+      {/* Duplicate warning modal */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink-900/30 backdrop-blur-sm" onClick={() => setDuplicateWarning(null)} aria-hidden />
+          <div className="relative w-full max-w-md rounded-2xl bg-surface-card p-6 shadow-card-hover">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-orange-light text-orange">
+                <TriangleAlert className="size-5" strokeWidth={2.5} />
+              </span>
+              <div>
+                <h3 className="text-base font-bold text-ink-900">
+                  Posible duplicado
+                </h3>
+                <p className="mt-1 text-sm text-ink-500">
+                  Una obra con el mismo título y escritores ya existe:
+                </p>
+                <p className="mt-2 text-sm font-semibold text-ink-700">
+                  {duplicateWarning.title} — {duplicateWarning.artist}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={openExistingWork}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-surface-shell px-4 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:bg-surface"
+              >
+                Abrir obra existente
+              </button>
+              <button
+                type="button"
+                onClick={continueAnyway}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-dark"
+              >
+                Continuar de todos modos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -315,211 +312,154 @@ function StepType({ onSelectSong }: { onSelectSong: () => void }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Step 2 — Title                                                             */
+/* Step 2 — Basic data (title + artist)                                       */
 /* -------------------------------------------------------------------------- */
-function StepTitle({
+function StepDetails({
   title,
-  error,
-  onChange,
-  onBack,
-  onContinue,
-}: {
-  title: string
-  error: boolean
-  onChange: (v: string) => void
-  onBack: () => void
-  onContinue: () => void
-}) {
-  return (
-    <div>
-      <h2 className="text-xl font-bold tracking-tight text-ink-900">
-        ¿Cómo se llama?
-      </h2>
-      <p className="mt-1.5 text-sm text-ink-500">
-        Puedes cambiar el título más adelante.
-      </p>
-
-      <input
-        autoFocus
-        value={title}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) onContinue()
-        }}
-        placeholder="Título de la obra"
-        className={cn(
-          'mt-6 w-full rounded-xl border bg-surface-card px-4 py-3 text-base text-ink-900 placeholder:text-ink-300 outline-none transition-colors focus:ring-2',
-          error
-            ? 'border-pink focus:border-pink focus:ring-pink/20'
-            : 'border-surface-shell focus:border-brand focus:ring-brand/20',
-        )}
-      />
-      {error && (
-        <p className="mt-2 text-sm font-medium text-pink">
-          Escribe un título para continuar.
-        </p>
-      )}
-
-      <StepFooter
-        onBack={onBack}
-        primaryLabel="Continuar"
-        onPrimary={onContinue}
-        primaryDisabled={false}
-      />
-    </div>
-  )
-}
-
-/* -------------------------------------------------------------------------- */
-/* Step 3 — Participants                                                      */
-/* -------------------------------------------------------------------------- */
-function StepParticipants({
-  participants,
-  onChangeName,
-  onAdd,
-  onRemove,
-  onBack,
-  onContinue,
-}: {
-  participants: Participant[]
-  onChangeName: (id: string, name: string) => void
-  onAdd: () => void
-  onRemove: (id: string) => void
-  onBack: () => void
-  onContinue: () => void
-}) {
-  const canContinue = participants.some((p) => p.name.trim().length > 0)
-  return (
-    <div>
-      <h2 className="text-xl font-bold tracking-tight text-ink-900">
-        ¿Quién participa?
-      </h2>
-      <p className="mt-1.5 text-sm text-ink-500">
-        Agrega a las personas que crearon esta obra.
-      </p>
-
-      <div className="mt-6 space-y-3">
-        {participants.map((p, i) => (
-          <div key={p.id} className="flex items-center gap-2">
-            <input
-              autoFocus={i === 0}
-              value={p.name}
-              onChange={(e) => onChangeName(p.id, e.target.value)}
-              placeholder="Nombre de la persona"
-              className="w-full rounded-xl border border-surface-shell bg-surface-card px-4 py-2.5 text-sm text-ink-900 placeholder:text-ink-300 outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20"
-            />
-            {participants.length > 1 && (
-              <button
-                type="button"
-                onClick={() => onRemove(p.id)}
-                aria-label="Quitar persona"
-                className="flex size-9 shrink-0 items-center justify-center rounded-xl text-ink-500 transition-colors hover:bg-pink-light hover:text-pink"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition-colors hover:border-brand hover:text-brand"
-      >
-        <Plus className="size-4" />
-        Agregar persona
-      </button>
-
-      <StepFooter
-        onBack={onBack}
-        primaryLabel="Continuar"
-        onPrimary={onContinue}
-        primaryDisabled={!canContinue}
-      />
-    </div>
-  )
-}
-
-/* -------------------------------------------------------------------------- */
-/* Step 4 — Splits                                                            */
-/* -------------------------------------------------------------------------- */
-function StepSplits({
-  participants,
-  total,
-  valid,
-  saving,
-  onChangePct,
+  artist,
+  titleError,
+  artistError,
+  onTitleChange,
+  onArtistChange,
   onBack,
   onSave,
+  saving,
 }: {
-  participants: Participant[]
-  total: number
-  valid: boolean
-  saving: boolean
-  onChangePct: (id: string, value: string) => void
+  title: string
+  artist: string
+  titleError: boolean
+  artistError: boolean
+  onTitleChange: (v: string) => void
+  onArtistChange: (v: string) => void
   onBack: () => void
   onSave: () => void
+  saving: boolean
 }) {
-  const totalOk = Math.round(total) === 100
+  const canSave = title.trim().length > 0 && artist.trim().length > 0
+
   return (
     <div>
       <h2 className="text-xl font-bold tracking-tight text-ink-900">
-        ¿Cómo se dividió la composición?
+        Datos básicos
       </h2>
       <p className="mt-1.5 text-sm text-ink-500">
-        Los porcentajes deben sumar 100%.
+        Solo necesitas título y artista. El resto se completa después.
       </p>
 
-      <div className="mt-6 space-y-2">
-        {participants.map((p) => (
-          <div
-            key={p.id}
-            className="flex items-center justify-between gap-4 rounded-xl border border-surface-shell bg-surface-card px-4 py-3"
+      <div className="mt-6 space-y-5">
+        <div>
+          <label
+            htmlFor="work-title"
+            className="mb-1.5 block text-sm font-semibold text-ink-700"
           >
-            <span className="truncate text-sm font-medium text-ink-900">
-              {p.name}
-            </span>
-            <div className="flex items-center rounded-lg border border-surface-shell bg-surface px-2 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={p.percentage}
-                onChange={(e) => onChangePct(p.id, e.target.value)}
-                className="w-14 bg-transparent py-1.5 text-right text-sm font-semibold text-ink-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <span className="pl-1 text-sm font-medium text-ink-500">%</span>
-            </div>
-          </div>
-        ))}
-      </div>
+            Título <span className="text-pink">*</span>
+          </label>
+          <input
+            id="work-title"
+            autoFocus
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && canSave) {
+                onSave()
+              }
+            }}
+            placeholder="Título de la obra"
+            className={cn(
+              'w-full rounded-xl border bg-surface-card px-4 py-3 text-base text-ink-900 placeholder:text-ink-300 outline-none transition-colors focus:ring-2',
+              titleError
+                ? 'border-pink focus:border-pink focus:ring-pink/20'
+                : 'border-surface-shell focus:border-brand focus:ring-brand/20',
+            )}
+          />
+          {titleError && (
+            <p className="mt-1.5 text-sm font-medium text-pink">
+              Escribe un título.
+            </p>
+          )}
+        </div>
 
-      {/* Total */}
-      <div
-        className={cn(
-          'mt-4 flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold',
-          totalOk ? 'bg-teal-light text-teal' : 'bg-orange-light text-orange',
-        )}
-      >
-        <span className="uppercase tracking-wide">Total</span>
-        <span className="inline-flex items-center gap-1.5">
-          {total}%
-          {totalOk && <Check className="size-4" strokeWidth={3} />}
-        </span>
+        <div>
+          <label
+            htmlFor="work-artist"
+            className="mb-1.5 block text-sm font-semibold text-ink-700"
+          >
+            Artista principal <span className="text-pink">*</span>
+          </label>
+          <input
+            id="work-artist"
+            value={artist}
+            onChange={(e) => onArtistChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && canSave) {
+                onSave()
+              }
+            }}
+            placeholder="Nombre del artista"
+            className={cn(
+              'w-full rounded-xl border bg-surface-card px-4 py-3 text-base text-ink-900 placeholder:text-ink-300 outline-none transition-colors focus:ring-2',
+              artistError
+                ? 'border-pink focus:border-pink focus:ring-pink/20'
+                : 'border-surface-shell focus:border-brand focus:ring-brand/20',
+            )}
+          />
+          {artistError && (
+            <p className="mt-1.5 text-sm font-medium text-pink">
+              Escribe el nombre del artista.
+            </p>
+          )}
+        </div>
       </div>
-      {!totalOk && (
-        <p className="mt-2 text-sm font-medium text-orange">
-          Los porcentajes deben sumar 100%.
-        </p>
-      )}
 
       <StepFooter
         onBack={onBack}
-        primaryLabel={saving ? 'Guardando...' : 'Guardar obra'}
+        primaryLabel={saving ? 'Guardando...' : 'Crear obra'}
         onPrimary={onSave}
-        primaryDisabled={!valid || saving}
+        primaryDisabled={!canSave || saving}
       />
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Step 3 — Confirmation                                                      */
+/* -------------------------------------------------------------------------- */
+function StepConfirmation({
+  title,
+  onView,
+  onCreateAnother,
+}: {
+  title: string
+  onView: () => void
+  onCreateAnother: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center text-center">
+      <span className="flex size-16 items-center justify-center rounded-2xl bg-teal-light text-teal">
+        <Check className="size-8" strokeWidth={3} />
+      </span>
+      <h2 className="mt-5 text-xl font-bold tracking-tight text-ink-900">
+        ¡Listo! &ldquo;{title}&rdquo; se creó correctamente.
+      </h2>
+      <p className="mt-2 text-sm text-ink-500">
+        Puedes completar los detalles cuando quieras desde el catálogo.
+      </p>
+      <div className="mt-8 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onView}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-dark"
+        >
+          Ver obra
+        </button>
+        <button
+          type="button"
+          onClick={onCreateAnother}
+          className="inline-flex items-center gap-2 rounded-xl border border-surface-shell px-5 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:bg-surface"
+        >
+          Crear otra
+        </button>
+      </div>
     </div>
   )
 }

@@ -25,6 +25,15 @@ export function relativeTime(iso: string): string {
   })
 }
 
+// Normalize text for accent-insensitive, case-insensitive comparison.
+export function normalizeSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
 // "Bismarck García" -> "B. García"
 export function shortName(name: string): string {
   const trimmed = name.trim()
