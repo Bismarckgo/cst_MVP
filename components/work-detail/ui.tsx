@@ -2,14 +2,8 @@
 
 import { cn } from '@/lib/utils'
 import type { ModuleState } from '@/lib/works/status'
-import {
-  AlertTriangle,
-  Check,
-  Circle,
-  Copy,
-  OctagonAlert,
-} from 'lucide-react'
-import { useState } from 'react'
+import { TriangleAlert as AlertTriangle, Check, Circle, Copy, OctagonAlert } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 /* -------------------------------------------------------------------------- */
 /* Panel — the boxed sections that make up the 360° summary                   */
@@ -165,6 +159,130 @@ export function CopyField({
         )}
         {copied ? 'Copiado' : 'Copy'}
       </button>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* InlineField — click-to-edit value that transforms in place                  */
+/* -------------------------------------------------------------------------- */
+export function InlineField({
+  label,
+  value,
+  placeholder,
+  mono = false,
+  required = false,
+  onSave,
+}: {
+  label: string
+  value: string | null
+  placeholder?: string
+  mono?: boolean
+  required?: boolean
+  onSave: (value: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Keep draft in sync when the canonical value changes from the outside.
+  useEffect(() => {
+    if (!editing) setDraft(value ?? '')
+  }, [value, editing])
+
+  // Focus and select the input as soon as editing begins.
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  function startEditing() {
+    setError(null)
+    setDraft(value ?? '')
+    setEditing(true)
+  }
+
+  function cancel() {
+    setDraft(value ?? '')
+    setError(null)
+    setEditing(false)
+  }
+
+  async function commit() {
+    const trimmed = draft.trim()
+    if (required && !trimmed) return
+    if (trimmed === (value ?? '')) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave(trimmed)
+      setEditing(false)
+      setError(null)
+    } catch {
+      setError('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="py-2.5">
+        <p className="text-[11px] font-semibold tracking-wider text-ink-500 uppercase">
+          {label}
+        </p>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              void commit()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              cancel()
+            }
+          }}
+          onBlur={() => {
+            if (!saving) void commit()
+          }}
+          disabled={saving}
+          placeholder={placeholder}
+          className={cn(
+            'mt-0.5 w-full rounded-lg border border-brand bg-surface px-3 py-1.5 text-sm text-ink-900 outline-none ring-2 ring-brand/20 transition-colors',
+            mono && 'font-mono',
+          )}
+        />
+        {error && (
+          <p className="mt-1 text-xs font-medium text-pink">{error}</p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold tracking-wider text-ink-500 uppercase">
+          {label}
+        </p>
+        <p
+          className={cn(
+            'mt-0.5 truncate text-sm',
+            mono && 'font-mono',
+            value ? 'text-ink-900' : 'text-ink-300',
+          )}
+        >
+          {value || placeholder || '—'}
+        </p>
+      </div>
     </div>
   )
 }

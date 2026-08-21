@@ -1,6 +1,6 @@
 'use client'
 
-import { CopyField, Panel, StateIcon } from '@/components/work-detail/ui'
+import { CopyField, InlineField, Panel, StateIcon } from '@/components/work-detail/ui'
 import { cn } from '@/lib/utils'
 import { roleLabel } from '@/lib/works/roles'
 import {
@@ -11,8 +11,7 @@ import {
   nextAction,
 } from '@/lib/works/status'
 import type { ParticipantRole, Work, WorkPatch } from '@/lib/works/types'
-import { AlertTriangle, ArrowRight, Check, Disc3, Pencil, UserPlus, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { TriangleAlert as AlertTriangle, ArrowRight, Disc3, UserPlus } from 'lucide-react'
 
 interface PersonRow {
   id: string
@@ -59,61 +58,6 @@ export function OverviewTab({
   const compTotal = Math.round(compositionTotal(work))
   const compComplete = compositionComplete(work)
   const action = nextAction(modules)
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(work.title)
-  const [artist, setArtist] = useState(work.primaryArtist)
-  const [iswc, setIswc] = useState(work.iswc ?? '')
-  const [isrc, setIsrc] = useState(work.isrc ?? '')
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    setTitle(work.title)
-    setArtist(work.primaryArtist)
-    setIswc(work.iswc ?? '')
-    setIsrc(work.isrc ?? '')
-  }, [work])
-
-  useEffect(() => {
-    if (!editing) return
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        handleCancel()
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [editing, work])
-
-  const canSave = useMemo(
-    () => title.trim().length > 0 && artist.trim().length > 0,
-    [title, artist],
-  )
-
-  async function handleSave() {
-    if (!canSave || saving) return
-    setSaving(true)
-    try {
-      await updateWork({
-        title: title.trim(),
-        primaryArtist: artist.trim(),
-        iswc: iswc.trim() || undefined,
-        isrc: isrc.trim() || undefined,
-      })
-      setEditing(false)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function handleCancel() {
-    setTitle(work.title)
-    setArtist(work.primaryArtist)
-    setIswc(work.iswc ?? '')
-    setIsrc(work.isrc ?? '')
-    setEditing(false)
-  }
 
   return (
     <div className="space-y-5">
@@ -149,86 +93,38 @@ export function OverviewTab({
           </ul>
         </Panel>
 
-        <Panel
-          title="Identificadores"
-          action={
-            !editing ? (
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-700 hover:text-brand"
-              >
-                <Pencil className="size-3.5" />
-                Editar
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-surface-shell px-2.5 py-1.5 text-[11px] font-semibold text-ink-700 hover:bg-surface"
-                >
-                  <X className="size-3.5" />
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={!canSave || saving}
-                  onClick={void handleSave}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors',
-                    canSave && !saving ? 'bg-brand hover:bg-brand-dark' : 'cursor-not-allowed bg-ink-300',
-                  )}
-                >
-                  <Check className="size-3.5" />
-                  {saving ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
-            )
-          }
-        >
-          {editing ? (
-            <div className="space-y-3">
-              <label className="block text-sm">
-                <span className="mb-1 block text-[11px] font-semibold tracking-wider text-ink-500 uppercase">Title</span>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-surface-shell bg-surface px-3 py-2 text-sm text-ink-900 outline-none ring-0 transition-colors focus:border-brand"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="mb-1 block text-[11px] font-semibold tracking-wider text-ink-500 uppercase">Artist</span>
-                <input
-                  value={artist}
-                  onChange={(e) => setArtist(e.target.value)}
-                  className="w-full rounded-xl border border-surface-shell bg-surface px-3 py-2 text-sm text-ink-900 outline-none ring-0 transition-colors focus:border-brand"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="mb-1 block text-[11px] font-semibold tracking-wider text-ink-500 uppercase">ISWC</span>
-                <input
-                  value={iswc}
-                  onChange={(e) => setIswc(e.target.value)}
-                  className="w-full rounded-xl border border-surface-shell bg-surface px-3 py-2 text-sm text-ink-900 outline-none ring-0 transition-colors focus:border-brand"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="mb-1 block text-[11px] font-semibold tracking-wider text-ink-500 uppercase">ISRC</span>
-                <input
-                  value={isrc}
-                  onChange={(e) => setIsrc(e.target.value)}
-                  className="w-full rounded-xl border border-surface-shell bg-surface px-3 py-2 text-sm text-ink-900 outline-none ring-0 transition-colors focus:border-brand"
-                />
-              </label>
-            </div>
-          ) : (
-            <div className="divide-y divide-surface">
-              <CopyField label="ISWC" value={work.iswc ?? null} />
-              <CopyField label="ISRC" value={work.isrc ?? null} />
-              <CopyField label="CST ID" value={cstId(work)} />
-            </div>
-          )}
+        <Panel title="Identificadores">
+          <div className="divide-y divide-surface">
+            <InlineField
+              label="Title"
+              value={work.title}
+              required
+              placeholder="Título de la obra"
+              onSave={async (v) => { await updateWork({ title: v }) }}
+            />
+            <InlineField
+              label="Artist"
+              value={work.primaryArtist || null}
+              required
+              placeholder="Nombre del artista"
+              onSave={async (v) => { await updateWork({ primaryArtist: v }) }}
+            />
+            <InlineField
+              label="ISWC"
+              value={work.iswc ?? null}
+              mono
+              placeholder="T-123.456.789-0"
+              onSave={async (v) => { await updateWork({ iswc: v || undefined }) }}
+            />
+            <InlineField
+              label="ISRC"
+              value={work.isrc ?? null}
+              mono
+              placeholder="US-ABC-26-00001"
+              onSave={async (v) => { await updateWork({ isrc: v || undefined }) }}
+            />
+            <CopyField label="CST ID" value={cstId(work)} />
+          </div>
         </Panel>
       </div>
 
